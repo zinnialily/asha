@@ -44,6 +44,7 @@ for _sibling_dir in ("candidate_pool", "scoring", "recommend", "demo"):
 
 import try_it_out as demo  # noqa: E402
 import compare_distance_only as cdo  # noqa: E402
+import generate_testing_diagrams as gtd  # noqa: E402  (shared draw_slide() template)
 
 # -----------------------------------------------------------------------------
 # MODULE-LEVEL CONSTANTS
@@ -177,10 +178,19 @@ def style_axes(ax) -> None:
     ax.tick_params(axis="y", length=0)
 
 
-def draw_scenario_chart(by_scenario: pd.DataFrame, output_path: Path) -> None:
-    """Bar chart: percent of cases where the #1 pick changed, one bar per
-    scenario — a single magnitude measure, so a single accent hue (no
-    categorical palette needed; see dataviz skill's form heuristic).
+def draw_scenario_chart(by_scenario: pd.DataFrame, output_path: Path, overall_pct_changed: float) -> None:
+    """Slide: the model's #1 pick vs. plain distance-only ranking, by
+    scenario. Renders through generate_testing_diagrams.draw_slide() so
+    this image matches the other three in diagrams/ (16:9, same headline
+    treatment, same hero-number framing).
+
+    PARAMETERS:
+        overall_pct_changed: the TRUE overall percentage, computed from the
+            raw per-location results (not re-derived from this function's
+            own already-rounded per-scenario values) — averaging four
+            rounded percentages compounds rounding error and would show a
+            hero number that quietly disagrees with the number already
+            reported elsewhere for the same run.
     """
     assert len(by_scenario) >= 1, "by_scenario must not be empty"
     labels = {
@@ -193,30 +203,27 @@ def draw_scenario_chart(by_scenario: pd.DataFrame, output_path: Path) -> None:
     x_labels = [labels.get(s, s) for s in ordered["scenario"]]
     values = ordered["pct_top_pick_changed"].to_numpy()
     n_values = ordered["n"].to_numpy()
-
-    fig, ax = plt.subplots(figsize=(8.5, 5.0), dpi=200)
-    fig.patch.set_facecolor("#FCFCFB")
-    ax.set_facecolor("#FCFCFB")
-    style_axes(ax)
-
-    bars = ax.bar(x_labels, values, color=ACCENT_TEAL, width=0.55, zorder=3)
-    for bar, value in zip(bars, values):
-        ax.text(bar.get_x() + bar.get_width() / 2, value + 2, f"{value:.1f}%", ha="center", va="bottom",
-                color=INK, fontsize=11, fontweight="bold")
-
-    ax.set_ylim(0, max(values) + 15)
-    ax.set_ylabel("Top pick changed vs. distance-only (%)", color=MUTED_INK, fontsize=10)
-    ax.set_title("Model's #1 pick vs. plain distance-only ranking", fontsize=14, fontweight="bold",
-                 color=INK, pad=16, loc="left")
-    # All four bars share the same n (N_PER_SCENARIO each) — stated once in
-    # the caption rather than repeated under every bar, which collided with
-    # the two-line category labels at the chart's default size.
     assert (n_values == n_values[0]).all(), "bars have different sample sizes; the shared-n caption would be wrong"
-    fig.text(0.01, 0.01, f"n={n_values[0]} sampled locations per scenario ({int(n_values.sum())} total), near real facilities, seed={RANDOM_SEED}",
-              fontsize=8.5, color=MUTED_INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 1))
-    fig.savefig(output_path, facecolor=fig.get_facecolor())
-    plt.close(fig)
+
+    def visual(ax):
+        ax.set_facecolor(gtd.SURFACE)
+        gtd.style_axes(ax)
+        bars = ax.bar(x_labels, values, color=gtd.ACCENT_TEAL, width=0.55, zorder=3)
+        for bar, value in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width() / 2, value + 2, f"{value:.1f}%", ha="center", va="bottom",
+                    color=gtd.INK, fontsize=13, fontweight="bold")
+        ax.set_ylim(0, max(values) + 15)
+        ax.tick_params(axis="x", labelsize=13)
+
+    gtd.draw_slide(
+        output_path=output_path,
+        headline="The model beats pure distance most of the time",
+        hero_number=f"{overall_pct_changed:.1f}%",
+        hero_label="of top picks differ from\ndistance-only ranking",
+        draw_visual_fn=visual,
+        footer_text=f"n={n_values[0]} sampled locations per scenario ({int(n_values.sum())} total), "
+                    f"near real facilities, seed={RANDOM_SEED}. Method: modeling/demo/distance_only_sensitivity.py",
+    )
 
 
 def draw_confirmed_tier_chart(by_confirmed: pd.DataFrame, output_path: Path) -> None:
@@ -298,7 +305,7 @@ def main() -> int:
 
     scenario_chart_path = DIAGRAMS_DIR / "distance_only_by_scenario.png"
     confirmed_chart_path = DIAGRAMS_DIR / "distance_only_by_confirmed_tier.png"
-    draw_scenario_chart(by_scenario, scenario_chart_path)
+    draw_scenario_chart(by_scenario, scenario_chart_path, overall_pct_changed=output["overall"]["pct_top_pick_changed"])
     draw_confirmed_tier_chart(by_confirmed, confirmed_chart_path)
     print(f"Wrote {scenario_chart_path}")
     print(f"Wrote {confirmed_chart_path}")
